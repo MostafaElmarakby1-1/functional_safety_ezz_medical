@@ -20,6 +20,8 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "stm32f4xx_it.h"
+#include "stm32f4xx_hal.h"
+
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -101,17 +103,20 @@ void HardFault_Handler(void)
  */
 void MemManage_Handler(void)
 {
-	/* USER CODE BEGIN MemoryManagement_IRQn 0 */
-	MPU_HandleMemManageFault();
-	MPU_GetFaultInfo(&fault_info);
+    MPU_HandleMemManageFault();
+    MPU_GetFaultInfo(&fault_info);
 
+    for (uint8_t i = 0; i < 5; i++)
+    {
+        HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
 
-	/* USER CODE END MemoryManagement_IRQn 0 */
-	while (1)
-	{
-		/* USER CODE BEGIN W1_MemoryManagement_IRQn 0 */
-		/* USER CODE END W1_MemoryManagement_IRQn 0 */
-	}
+        for (volatile uint32_t j = 0; j < 1000000; j++)
+        {
+            /* Delay for test indication */
+        }
+    }
+
+    NVIC_SystemReset();
 }
 
 /**

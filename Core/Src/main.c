@@ -60,7 +60,7 @@ uint8_t crc_recieve;
 USART_Frame_t frame = {0};
 volatile uint8_t scheduler_flag = 0;
 volatile uint8_t uart_tx_complete = 1;
-volatile uint8_t marakby = 1;
+
 
 
 volatile uint8_t HSE_Fault = 0;
@@ -130,14 +130,14 @@ void DutyCycle_Task(void)
 	}
 }
 
-void MPU_Test(void)
+ /*void MPU_Test(void)
 {
 	volatile uint32_t *FlashAddress =
 			(volatile uint32_t *)0x08000000U;
 
 	*FlashAddress = 0x12345678U;
-}
-
+  }
+	*/
 void MPU_Test_ExecuteFromRAM(void)
 {
 	typedef void (*FunctionPointer)(void);
@@ -255,6 +255,7 @@ int main(void)
 			test_done = 1;
 			MPU_Test_ExecuteFromRAM();
 		}
+
 
 
 		/* USER CODE END WHILE */
