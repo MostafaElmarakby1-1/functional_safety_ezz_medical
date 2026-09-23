@@ -1,0 +1,4 @@
+../Core/Src/UART_FRAME.c:16:6:Send_ACK	1
+../Core/Src/UART_FRAME.c:22:6:Send_NACK	1
+../Core/Src/UART_FRAME.c:29:9:CRC8	4
+../Core/Src/UART_FRAME.c:55:6:Send_Frame	2
