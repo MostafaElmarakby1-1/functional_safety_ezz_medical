@@ -59,7 +59,7 @@ uint8_t crc_recieve;
 
 USART_Frame_t frame = {0};
 volatile uint8_t scheduler_flag = 0;
-//volatile uint8_t uart_tx_complete = 1;
+volatile uint8_t uart_tx_complete = 1;
 
 
 volatile uint8_t HSE_Fault = 0;
