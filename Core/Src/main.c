@@ -25,11 +25,13 @@
 #include "TMU.h"
 #include "UART_FRAME.h"
 #include "MPU.h"
+#include "Safety.h"
 
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
+/* USER APPLICATION: Stores the latest MPU fault information */
 MPU_FaultInfoTypeDef fault_info;
 /* USER CODE END PTD */
 
@@ -48,6 +50,8 @@ MPU_FaultInfoTypeDef fault_info;
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+RTC_HandleTypeDef hrtc;
+
 TIM_HandleTypeDef htim3;
 TIM_HandleTypeDef htim5;
 
@@ -60,7 +64,6 @@ uint8_t crc_recieve;
 USART_Frame_t frame = {0};
 volatile uint8_t scheduler_flag = 0;
 volatile uint8_t uart_tx_complete = 1;
-volatile uint8_t marakby = 1;
 
 
 volatile uint8_t HSE_Fault = 0;
@@ -88,13 +91,16 @@ static void MX_GPIO_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_TIM3_Init(void);
 static void MX_TIM5_Init(void);
+static void MX_RTC_Init(void);
 /* USER CODE BEGIN PFP */
 
+/* USER APPLICATION: Periodic LED task */
 void LED_Task(void)
 {
 	HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_0);
 }
 
+/* USER APPLICATION: Periodic UART frame transmission task */
 void UART_Task(void)
 {
 	if (uart_tx_complete)
@@ -103,6 +109,7 @@ void UART_Task(void)
 	}
 }
 
+/* USER APPLICATION: Set PWM duty cycle (0-100%) */
 void PWM_SetDutyCycle(uint8_t duty)
 {
 	uint32_t compare;
@@ -120,6 +127,7 @@ void PWM_SetDutyCycle(uint8_t duty)
 }
 
 
+/* USER APPLICATION: Update PWM when duty cycle changes */
 void DutyCycle_Task(void)
 {
 	if (pwm_duty != pwm_duty_previous)
@@ -130,6 +138,7 @@ void DutyCycle_Task(void)
 	}
 }
 
+/* MPU TEST: Deliberately write to Flash to generate a data access violation */
 void MPU_Test(void)
 {
 	volatile uint32_t *FlashAddress =
@@ -138,6 +147,7 @@ void MPU_Test(void)
 	*FlashAddress = 0x12345678U;
 }
 
+/* MPU TEST: Deliberately execute from RAM to generate an instruction access violation */
 void MPU_Test_ExecuteFromRAM(void)
 {
 	typedef void (*FunctionPointer)(void);
@@ -201,30 +211,47 @@ int main(void)
 	MX_USART1_UART_Init();
 	MX_TIM3_Init();
 	MX_TIM5_Init();
-
+	MX_RTC_Init();
 	/* USER CODE BEGIN 2 */
 
-	/* Initialize TMU */
-	TMU_Init();
+	/* USER APPLICATION: Initialize Safety Layer and read persistent history */
+	Safety_Init();
+
+	/* USER APPLICATION: Configure and enable MPU protection */
 	MPU_Init();
 
-	/* Start scheduled tasks */
-	TMU_StartTask(TMU_LED, 1);
-	TMU_StartTask(TMU_PWM, 1);
-	TMU_StartTask(TMU_UART, 1);
+	/* USER TEST: Show the stored MPU-reset counter using PC13 pulses */
+	//Safety_RunTestIndication();
 
-	/* Start PWM */
-	HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
+	/* USER APPLICATION: Start normal application only when not in Safe State */
+	if (!Safety_IsSafeState())
+	{
+		/* USER APPLICATION: Initialize Task Manager */
+		TMU_Init();
 
-	PWM_SetDutyCycle(pwm_duty);
+		/* USER APPLICATION: Start periodic application tasks */
+		TMU_StartTask(TMU_LED, 1);
+		TMU_StartTask(TMU_PWM, 1);
+		TMU_StartTask(TMU_UART, 1);
 
-	/* Start 1 ms scheduler */
-	HAL_TIM_Base_Start_IT(&htim3);
+		/* USER APPLICATION: Start PWM output */
+		HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
 
-	/* Start first UART frame */
-	Send_Frame(&frame, &huart1);
-	HAL_TIM_IC_Start_IT(&htim5, TIM_CHANNEL_4);
-	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);
+		/* USER APPLICATION: Apply initial PWM duty cycle */
+		PWM_SetDutyCycle(pwm_duty);
+
+		/* USER APPLICATION: Start 1 ms scheduler */
+		HAL_TIM_Base_Start_IT(&htim3);
+
+		/* USER APPLICATION: Send first UART frame */
+		Send_Frame(&frame, &huart1);
+
+		/* USER APPLICATION: Start SYSCLK monitoring capture */
+		HAL_TIM_IC_Start_IT(&htim5, TIM_CHANNEL_4);
+
+		/* USER APPLICATION: PC13 is active-low, so SET = LED OFF */
+		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);
+	}
 
 	/* USER CODE END 2 */
 
@@ -233,21 +260,28 @@ int main(void)
 	while (1)
 	{
 
+		Safety_Process();
 
-		if (HSE_Fault)
-		{
-			HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);
-		}
 
-		if (SYSCLK_Fault)
-		{
-			HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_RESET);
-		}else
-		{
-			HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);
 
-		}
+		//		/* USER APPLICATION: Indicate HSE fault (PC13 active-low) */
+		//		if (HSE_Fault)
+		//		{
+		//			HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);
+		//		}
+		//
+		//		/* USER APPLICATION: Indicate SYSCLK fault (PC13 active-low) */
+		//		if (SYSCLK_Fault)
+		//		{
+		//			HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_RESET);
+		//		}else
+		//		{
+		//			HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);
+		//
+		//		}
 
+
+		/* MPU TEST: Generate one intentional MPU violation */
 		static uint8_t test_done = 0;
 
 		if (test_done == 0)
@@ -255,7 +289,10 @@ int main(void)
 			test_done = 1;
 			MPU_Test_ExecuteFromRAM();
 		}
-
+		if (Safety_IsSafeState())
+		{
+			continue;
+		}
 
 		/* USER CODE END WHILE */
 
@@ -313,6 +350,41 @@ void SystemClock_Config(void)
 	/** Enables the Clock Security System
 	 */
 	HAL_RCC_EnableCSS();
+}
+
+/**
+ * @brief RTC Initialization Function
+ * @param None
+ * @retval None
+ */
+static void MX_RTC_Init(void)
+{
+
+	/* USER CODE BEGIN RTC_Init 0 */
+
+	/* USER CODE END RTC_Init 0 */
+
+	/* USER CODE BEGIN RTC_Init 1 */
+
+	/* USER CODE END RTC_Init 1 */
+
+	/** Initialize RTC Only
+	 */
+	hrtc.Instance = RTC;
+	hrtc.Init.HourFormat = RTC_HOURFORMAT_24;
+	hrtc.Init.AsynchPrediv = 127;
+	hrtc.Init.SynchPrediv = 255;
+	hrtc.Init.OutPut = RTC_OUTPUT_DISABLE;
+	hrtc.Init.OutPutPolarity = RTC_OUTPUT_POLARITY_HIGH;
+	hrtc.Init.OutPutType = RTC_OUTPUT_TYPE_OPENDRAIN;
+	if (HAL_RTC_Init(&hrtc) != HAL_OK)
+	{
+		Error_Handler();
+	}
+	/* USER CODE BEGIN RTC_Init 2 */
+
+	/* USER CODE END RTC_Init 2 */
+
 }
 
 /**
@@ -518,6 +590,7 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+/* USER APPLICATION: TMU 1 ms scheduler tick */
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
 	if (htim->Instance == TIM3)
@@ -526,6 +599,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 	}
 }
 
+/* USER APPLICATION: UART transmission complete notification */
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
 {
 	if (huart->Instance == USART1)
@@ -534,11 +608,13 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
 	}
 }
 
+/* USER APPLICATION: HSE clock fault detection */
 void HAL_RCC_CSSCallback(void)
 {
 	HSE_Fault = 1;
 }
 
+/* USER APPLICATION: SYSCLK measurement and fault detection */
 void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
 {
 	if (htim->Instance == TIM5 &&
